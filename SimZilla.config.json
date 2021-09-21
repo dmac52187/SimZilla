@@ -1,0 +1,7 @@
+{
+    "server": "localhost",
+    "database": "CEPHAS_Yamato",
+    "username": "CephasPA",
+    "password": "MorgAuto2!",
+    "driver": "{ODBC Driver 17 for SQL Server}"
+}
