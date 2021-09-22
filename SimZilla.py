@@ -24,7 +24,8 @@ with open('SimZilla.config.json') as j:
 
 # colors
 open_loc = "#dfdfdf" # gray
-occupied_loc = "#528aaa" # blue
+occupied_loc_remove = "#528aaa" # blue
+occupied_loc = "#d86a14" # orange
 
 newline = "\n"
 
@@ -43,7 +44,8 @@ def create_circle(x, y, r, canvasName):  # center coordinates, radius
 # init our application's root window
 root = Tk()
 root.title("SimZilla")
-root.geometry('900x300')
+root.geometry('800x350')
+Grid.columnconfigure(root, 2, weight=1)
 
 # init canvas area
 w = Canvas(root,width=800, height=200, background='white')
@@ -59,7 +61,6 @@ with pyodbc.connect('DRIVER='+driver+';SERVER=tcp:'+server+';PORT=1433;DATABASE=
             "SELECT TOP (1000) [LocationId],[LocationX],[LocationY] FROM [CEPHAS_Yamato].[dbo].[MRM_Loc_Data] WHERE LocationId > 0 and LocationId < 9000")
         row = cursor.fetchone()
         while row:
-            # print(str(row[0]) + " " + str(row[1]) + " " + str(row[2]))
             locRow = [row[0], row[1], row[2]]
             coords.append(locRow)
             row = cursor.fetchone()
@@ -93,15 +94,39 @@ for i in coords:
     w.tag_bind(
         locations[count],
         '<Button-1>',
-        lambda e, x=count: change(x)  # call change function
+        lambda e, x=count: occupy_remove(x)  # call change function
+    )
+
+    w.tag_bind(
+        locations[count],
+        '<Button-3>',
+        lambda e, x=count: occupy(x)  # call change function
     )
 
     count = count + 1
 
 
+# canvas text legend
+# occupired for remove
+w.create_text(400, 160,text="Roll on retrieval schedule", fill=occupied_loc_remove,font=("Helvetica 12 bold"))
+# occupied
+w.create_text(400, 185, text="Roll not on retrieval schedule", fill=occupied_loc,
+              font=("Helvetica 12 bold"))
+
 
 # change fill color
-def change(x):
+def occupy_remove(x):
+    # get location fill
+    tup = w.itemconfig(locations[x], 'fill')
+    fill = tup[-1]
+    # fill occupied/open
+    if fill == open_loc:
+        w.itemconfig(locations[x], fill=occupied_loc_remove)
+    else:
+        w.itemconfig(locations[x], fill=open_loc)
+
+# change fill color
+def occupy(x):
     # get location fill
     tup = w.itemconfig(locations[x], 'fill')
     fill = tup[-1]
@@ -145,16 +170,23 @@ def save():
         id = data[0]
         tup = w.itemconfig(locations[count], 'fill')
         fill = tup[-1]
-        if fill == occupied_loc:
+        # if fill == occupied_loc_remove:
+        if fill != open_loc:
+            # check location to get roll type
+            if id in range(400, 516):
+                rollType = 1
+            else:
+                rollType = 2
             
             id_trans.write(
                 "INSERT[dbo].MRM_ID_Trans(Inv_Uid, [PickableID], LocationId) VALUES("+str(inv_uid)+", 1, "+str(id)+")"+newline)
                 
             id_static.write(
-                "INSERT [dbo].MRM_r_ID_Static (Inv_Uid,[Inv_Id],[OD],[Type],[Width]) VALUES ("+str(inv_uid)+", N'Roll_"+str(inv_uid)+"',40,1,88)"+newline)
-                
-            sched_retrieve.write(
-                "INSERT [dbo].Sim_Schedule_Retrieve (Inv_Uid,simTime_s) VALUES ("+str(inv_uid)+","+str(sim_time)+")"+newline)
+                "INSERT [dbo].MRM_r_ID_Static (Inv_Uid,[Inv_Id],[OD],[Type],[Width]) VALUES ("+str(inv_uid)+", N'Roll_"+str(inv_uid)+"',40,"+str(rollType)+",88)"+newline)
+
+            if fill == occupied_loc_remove: 
+                sched_retrieve.write(
+                    "INSERT [dbo].Sim_Schedule_Retrieve (Inv_Uid,simTime_s) VALUES ("+str(inv_uid)+","+str(sim_time)+")"+newline)
 
             inv_uid = inv_uid+1
             sim_time = sim_time+1410
@@ -163,19 +195,25 @@ def save():
     id_static.close()
     sched_retrieve.close()
 
-    # rolls outside yard for insert
+    # small rolls outside yard for insert
     try:
         # get input
-        rollsOutside = int(inputNum.get())
-        print("Rolls Outside Yard: "+str(rollsOutside))
+        test_input = inputNum_small.get()
+        if test_input == "":
+            rollsOutside_small = 0
+        else:
+            rollsOutside_small = int(inputNum_small.get())
+
+        test_input = inputNum_large.get()
+        if test_input == "":
+            rollsOutside_large = 0
+        else:            
+            rollsOutside_large = int(inputNum_large.get())
 
     except:
-        print("Invalid input! Must be an Integer")
         messagebox.showerror("Invalid input!","Input value must be an integer!")
-        rollsOutside = 0
-        # id_static = open(dir+"MRM_r_ID_Static.sql", 'a')
-        # id_static.write(newline+newline +
-        #             "SET IDENTITY_INSERT [dbo].[MRM_r_ID_Static] OFF")
+        rollsOutside_small = 0
+        rollsOutside_large = 0
 
     sim_time = 1190
     id_trans = open(dir+"MRM_ID_Trans.sql", 'a')
@@ -184,13 +222,27 @@ def save():
     sched_insert.write("USE CEPHAS_Yamato"+newline +
                          "TRUNCATE TABLE Sim_Schedule_insert"+newline)
 
-    for i in range(rollsOutside):
-
+    for i in range(rollsOutside_small):
+        rollType = 1
         id_trans.write(
             "INSERT[dbo].MRM_ID_Trans(Inv_Uid, [PickableID], LocationId) VALUES("+str(inv_uid)+", 1, -1)"+newline)
 
         id_static.write(
-            "INSERT [dbo].MRM_r_ID_Static (Inv_Uid,[Inv_Id],[OD],[Type],[Width]) VALUES ("+str(inv_uid)+", N'Roll_"+str(inv_uid)+"',40,1,88)"+newline)
+            "INSERT [dbo].MRM_r_ID_Static (Inv_Uid,[Inv_Id],[OD],[Type],[Width]) VALUES ("+str(inv_uid)+", N'Roll_"+str(inv_uid)+"',40,"+str(rollType)+",88)"+newline)
+
+        sched_insert.write(
+            "INSERT [dbo].Sim_Schedule_Insert (Inv_Uid,simTime_s) VALUES ("+str(inv_uid)+","+str(sim_time)+")"+newline)
+
+        inv_uid = inv_uid+1
+        sim_time = sim_time+3310
+
+    for i in range(rollsOutside_large):
+        rollType = 2
+        id_trans.write(
+            "INSERT[dbo].MRM_ID_Trans(Inv_Uid, [PickableID], LocationId) VALUES("+str(inv_uid)+", 1, -1)"+newline)
+
+        id_static.write(
+            "INSERT [dbo].MRM_r_ID_Static (Inv_Uid,[Inv_Id],[OD],[Type],[Width]) VALUES ("+str(inv_uid)+", N'Roll_"+str(inv_uid)+"',40,"+str(rollType)+",88)"+newline)
 
         sched_insert.write(
             "INSERT [dbo].Sim_Schedule_Insert (Inv_Uid,simTime_s) VALUES ("+str(inv_uid)+","+str(sim_time)+")"+newline)
@@ -207,11 +259,31 @@ def save():
                     "SET IDENTITY_INSERT [dbo].[MRM_r_ID_Static] OFF")
 
 
+# testing grid????
+testLabel = Label(text="Left Click location to add roll on retrieval schedule"+newline+newline +
+                  "Right Click location to add roll in yard," + newline+
+                  "but not on retrieval schedule"+newline+newline +
+                  "Outside rolls must be a valid whole number, or left blank")
+# testLabel.grid(column=1, row=1)
+testLabel.pack(side=LEFT)
+
+testLabel2 = Label(text="Save Yard will store current layout, and save SQL files"+newline+newline +
+                  "Clear Yard will clear current yard layout"+newline+newline)
+# testLabel.grid(column=1, row=1)
+testLabel2.pack(side=RIGHT)
+
 # rolls outside yard
-inputLabel = Label(text="Rolls Outside Yard")
-inputLabel.pack()
-inputNum = Entry(width=15)
-inputNum.pack()
+inputLabel_small = Label(text="Small Rolls Outside Yard")
+inputLabel_small.pack()
+inputNum_small = Entry(width=15)
+inputNum_small.pack()
+
+inputLabel_large = Label(text="Large Rolls Outside Yard")
+inputLabel_large.pack()
+inputNum_large = Entry(width=15)
+inputNum_large.pack()
+
+
 
 
 # print/save file button
